@@ -3,7 +3,7 @@ import sqlite3
 from tkinter import *
 from tkinter import messagebox
 from PIL import Image, ImageTk
-from need_module import sys
+from need_module import sys, ctypes
 
 class Register(object):
     def __init__(self, Login,Chat,master=None):
@@ -15,19 +15,19 @@ class Register(object):
         # 设置窗口居中
         sw = self.root.winfo_screenwidth()  # 计算水平距离
         sh = self.root.winfo_screenheight()  # 计算垂直距离
-        w = 690  # 宽
-        h = 520  # 高
+        w = 740  # 宽
+        h = 590  # 高
         x = (sw - w) / 2
         y = (sh - h) / 2
         self.root.geometry("%dx%d+%d+%d" % (w, h, (x + 160), y))
         self.root.iconbitmap(r'images/icon/register.ico')  # 设置左上角窗口图标
         self.root.resizable(0, 0)  # 窗口设置为不可放大缩小
-        # # 告诉操作系统使用程序自身的dpi适配
-        # ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        # # 获取屏幕的缩放因子
-        # ScaleFactor = ctypes.windll.shcore.GetScaleFactorForDevice(0)
-        # # 设置程序缩放
-        # self.root.tk.call('tk', 'scaling', ScaleFactor / 75)
+        # 告诉操作系统使用程序自身的dpi适配
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        # 获取屏幕的缩放因子
+        ScaleFactor = ctypes.windll.shcore.GetScaleFactorForDevice(0)
+        # 设置程序缩放
+        self.root.tk.call('tk', 'scaling', ScaleFactor / 75)
         self.creatregister()
 
     def creatregister(self):
@@ -86,7 +86,7 @@ class Register(object):
         self.bt_quit = Button(self.fr3, text=" 退出 ", command=sys.exit)
         self.bt_quit.grid(row=1, column=2)
 
-        # # 底部标签
+        # 底部标签
         self.fr4 = Frame(self.root)
         self.fr4.pack(side='bottom')
 
@@ -94,7 +94,7 @@ class Register(object):
         self.bt_register.pack(side='left', anchor='s')
         self.la2 = Label(self.fr4, width=150)
         self.la2.pack()
-        self.tsLabel2 = Label(self.fr4, text="用户注册界面 by LGH ", fg="red")
+        self.tsLabel2 = Label(self.fr4, text="用户注册界面 by ZY ", fg="blue")
         self.tsLabel2.pack(side='right', anchor='s', pady=5)
 
     def register_win_close(self):
