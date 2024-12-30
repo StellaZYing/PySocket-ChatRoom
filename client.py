@@ -247,19 +247,22 @@ class ChatClient():
             try:
                 # 接收服务器发来的数据
                 data = sock.recv(1024)  # 从服务器接收数据（每次接收最大 1024 字节）
+                print(f"data:{data}")
                 if not data:
                     break
-                source = data.decode('utf-8') # 将数据解码为字符串
+                # source = data.decode('utf-8') # 将数据解码为字符串
                 json_data = json.loads(data.decode('utf-8'))  # 将 JSON 字符串反序列化为字典
+                print(f"rec_from_sever:{json_data}")
                 now_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                 self.scr1.configure(state=NORMAL) # 解锁消息显示区域，用于写入消息内容
 
                 # 处理初始化消息
                 if json_data['message_type'] == "init_message":
                     self.scr1.insert("end", f'欢迎{json_data["content"]}加入聊天室' + '\n', 'red')
-                    print(json_data["online_user"])  # 打印当前在线用户列表
+                    print(f"json_data:{json_data['online_user']}")  # 打印当前在线用户列表
                     # 将在线用户添加到好友列表中
-                    user_list = eval(json_data["online_user"])
+                    #user_list = eval(json_data["online_user"])
+                    user_list = json_data["online_user"]
                     for user in user_list:
                         if str(user) not in self.fri_list.get_children() and str(user) != self.name:  # 如果不在列表中
                             self.fri_list.insert('', 2, str(user), text=str(user).center(24), values=("1"), tags='其他用户')
