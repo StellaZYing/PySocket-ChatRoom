@@ -22,8 +22,11 @@ from register import * # 注册模块
     sock:定义一个实例化socket对象
     server:传递的服务器IP和端口
 '''
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # 使用udp传输方式
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # 使用tcp传输方式
 server = ('127.0.0.1', 9999)
+# 连接到服务器
+sock.connect(server)
+
 
 # 聊天室客户端类
 class ChatClient():
@@ -107,9 +110,7 @@ class ChatClient():
         message["recv_user"] = self.fri_list.selection()[0] # 接收用户：从好友列表中选中的用户，表示文件接收者
         message["content"] = filePath # 文件内容：这里使用文件的本地路径来表示具体的文件内容
         jsondata = json.dumps(message, ensure_ascii=False) # 将消息字典转换为 JSON 格式的字符串，方便网络传输。
-        sock.sendto(jsondata.encode('utf-8'), server)# 将编码后的 JSON 数据通过 UDP 协议发送到服务器
-        # - jsondata.encode('utf-8'): 将 JSON 字符串编码为字节数据
-        # - server: 服务器地址（由外部定义）
+        sock.sendall(jsondata.encode('utf-8'))# 将编码后的 JSON 数据通过 TCP 协议发送到服务器
 
     def cut_data(self, fhead, data):
         '''
@@ -122,17 +123,14 @@ class ChatClient():
         功能：
         - 将大文件分成 1024 字节的块，逐块发送。
         - 防止数据发送过快导致服务器无法及时处理。
-
-        注意：
-        - 这是使用 UDP 协议的发送方法。如果改为 TCP，需要重新设计数据发送逻辑。
         '''
         for i in range(fhead // 1024 + 1): # 计算总共需要发送多少块数据 (每块大小为 1024 字节)
             time.sleep(0.0000000001)  # 防止数据发送太快，服务器来不及接收出错
             if 1024 * (i + 1) > fhead:  # 是否到最后
-                sock.sendto(data[1024 * i:], server)  # 最后一次剩下的数据传给对方
+                sock.sendall(data[1024 * i:], server)  # 最后一次剩下的数据传给对方
                 print('第' + str(i + 1) + '次发送文件数据')
             else:
-                sock.sendto(data[1024 * i:1024 * (i + 1)], server) # 发送完整的 1024 字节块数据
+                sock.sendall(data[1024 * i:1024 * (i + 1)], server) # 发送完整的 1024 字节块数据
                 print('第' + str(i + 1) + '次发送文件数据')
 
     def succ_recv(self, filename, sourcename):
@@ -192,7 +190,7 @@ class ChatClient():
             message["send_user"] = self.name
             message["content"] = msg.strip()
             jsondata = json.dumps(message, ensure_ascii=False) # 将消息字典序列化为 JSON 字符串，确保非 ASCII 字符（如中文）也能正确处理
-            sock.sendto(jsondata.encode('utf-8'), server) # 将 JSON 数据编码为 UTF-8 字节流，并通过套接字发送给服务器
+            sock.sendall(jsondata.encode('utf-8')) # 将 JSON 数据编码为 UTF-8 字节流，并通过套接字发送给服务器
 
     def private_send(self, msg):
         """
@@ -229,7 +227,7 @@ class ChatClient():
             message["recv_user"] = self.fri_list.selection()[0]
             message["content"] = msg.strip()
             jsondata = json.dumps(message, ensure_ascii=False)
-            sock.sendto(jsondata.encode('utf-8'), server)
+            sock.sendall(jsondata.encode('utf-8'))
             return 'text', ''
 
     def recv(self):
@@ -242,179 +240,185 @@ class ChatClient():
         message = {}
         message["message_type"] = "init_message"
         message["content"] = self.name   # 初始化消息内容为客户端用户名
-        json_str = json.dumps(message, ensure_ascii=False)  # 将消息序列化为 JSON 格式
-        sock.sendto(json_str.encode('utf-8'), server) # 发送初始化消息到服务器
+        jsondata = json.dumps(message, ensure_ascii=False)  # 将消息序列化为 JSON 格式
+        sock.sendall(jsondata.encode('utf-8')) # 发送初始化消息到服务器
 
         while True:
-            # 接收服务器发来的数据
-            data = sock.recv(1024)  # 从服务器接收数据（每次接收最大 1024 字节）
-            source = data.decode('utf-8') # 将数据解码为字符串
-            json_data = json.loads(data.decode('utf-8'))  # 将 JSON 字符串反序列化为字典
-            now_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            self.scr1.configure(state=NORMAL) # 解锁消息显示区域，用于写入消息内容
+            try:
+                # 接收服务器发来的数据
+                data = sock.recv(1024)  # 从服务器接收数据（每次接收最大 1024 字节）
+                if not data:
+                    break
+                source = data.decode('utf-8') # 将数据解码为字符串
+                json_data = json.loads(data.decode('utf-8'))  # 将 JSON 字符串反序列化为字典
+                now_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                self.scr1.configure(state=NORMAL) # 解锁消息显示区域，用于写入消息内容
 
-            # 处理初始化消息
-            if json_data['message_type'] == "init_message":
-                self.scr1.insert("end", f'欢迎{json_data["content"]}加入聊天室' + '\n', 'red')
-                print(json_data["online_user"])  # 打印当前在线用户列表
-                # 将在线用户添加到好友列表中
-                user_list = eval(json_data["online_user"])
-                for user in user_list:
-                    if str(user) not in self.fri_list.get_children() and str(user) != self.name:  # 如果不在列表中
-                        self.fri_list.insert('', 2, str(user), text=str(user).center(24), values=("1"), tags='其他用户')
-                print(json_data["content"] + '进入了聊天室...')
+                # 处理初始化消息
+                if json_data['message_type'] == "init_message":
+                    self.scr1.insert("end", f'欢迎{json_data["content"]}加入聊天室' + '\n', 'red')
+                    print(json_data["online_user"])  # 打印当前在线用户列表
+                    # 将在线用户添加到好友列表中
+                    user_list = eval(json_data["online_user"])
+                    for user in user_list:
+                        if str(user) not in self.fri_list.get_children() and str(user) != self.name:  # 如果不在列表中
+                            self.fri_list.insert('', 2, str(user), text=str(user).center(24), values=("1"), tags='其他用户')
+                    print(json_data["content"] + '进入了聊天室...')
 
-            # 处理离开消息
-            elif json_data['message_type'] == "leave_message":
-                self.scr1.insert("end", f'{json_data["content"]}离开了聊天室...' + '\n', 'red') # 显示离开消息
-                if json_data["content"] in self.fri_list.get_children():  # 从好友列表中移除离开的用户
-                    self.fri_list.delete(json_data["content"])
-                print(json_data["content"] + '离开了聊天室...')
+                # 处理离开消息
+                elif json_data['message_type'] == "leave_message":
+                    self.scr1.insert("end", f'{json_data["content"]}离开了聊天室...' + '\n', 'red') # 显示离开消息
+                    if json_data["content"] in self.fri_list.get_children():  # 从好友列表中移除离开的用户
+                        self.fri_list.delete(json_data["content"])
+                    print(json_data["content"] + '离开了聊天室...')
 
-            # 处理普通群聊消息
-            elif json_data['chat_type'] == "normal":
-                if json_data['message_type'] == "text":  # 普通文本消息
-                    self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
-                    self.scr1.insert("end", json_data['content'] + '\n')
+                # 处理普通群聊消息
+                elif json_data['chat_type'] == "normal":
+                    if json_data['message_type'] == "text":  # 普通文本消息
+                        self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
+                        self.scr1.insert("end", json_data['content'] + '\n')
 
-                elif json_data['message_type'] == "stickers":  # 表情包消息
-                    self.scr1.configure(state=NORMAL)
-                    self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
-                    dics = self.obj_emoji.dics  # 获取表情包字典
-                    if json_data['content'] in dics:  # 如果表情包在字典中
-                        mes = json_data['content']
-                        self.scr1.image_create(END, image=dics[mes])
-                        self.scr1.insert("end", '\n', 'zise')
-                        self.scr1.see(END)
-                    self.scr1.config(state=DISABLED)
-                    print(f'收到{json_data["send_user"]}发的表情包：', json_data['content'])
-
-            # 处理私聊消息
-            elif json_data['chat_type'] == "private":
-                if json_data['message_type'] == "text":  # 私聊文本消息
-                    self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
-                    self.scr1.insert("end", json_data['content'])
-                    self.scr1.insert("end", f'  |私聊消息\n', 'zise')
-                    print(f'[私聊]收到{json_data["send_user"]}的消息：', json_data['content'])
-
-                elif json_data['message_type'] == "stickers":  # 私聊表情包消息
-                    self.scr1.configure(state=NORMAL)
-                    self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
-                    dics = self.obj_emoji.dics
-                    if json_data['content'] in dics:
-                        mes = json_data['content']
-                        self.scr1.image_create(END, image=dics[mes])
-                        self.scr1.insert("end", f'  |私聊消息\n', 'zise')
-                        self.scr1.see(END)
-                    self.scr1.config(state=DISABLED)
-                    print(f'[私聊]收到{json_data["send_user"]}发的表情包：', json_data['content'])
-
-                elif json_data['message_type'] == "ask-file":  # 私聊文件消息
-                    fileType = json_data["file_type"]
-                    self.scr1.configure(state=NORMAL)
-                    self.scr1.insert("end", "{} {}:\n".format(json_data["send_user"], now_time), 'green')
-                    self.scr1.insert("end", f'正在向你发送一个{fileType}文件...\n', 'shengzise')
-                    self.scr1.see(END)
-                    self.scr1.config(state=DISABLED)
-
-                    # 判断是否接收文件
-                    flag = messagebox.askyesno(title='提示',
-                                               message=f'{json_data["send_user"]}向你发送了一个{fileType}\n你是否要接收和保存？')
-                    if flag:
-                        json_data['message_type'] = "isRecv"
-                        json_data['isRecv'] = "true"  # 同意接收文件
-                        jsondata = json.dumps(json_data, ensure_ascii=False)
-                        sock.sendto(jsondata.encode('utf-8'), server)
-
-                    else:  # 用户拒绝接收文件
-                        json_data['message_type'] = "isRecv"
-                        json_data['isRecv'] = "false"
-                        jsondata = json.dumps(json_data, ensure_ascii=False)
-                        sock.sendto(jsondata.encode('utf-8'), server)
+                    elif json_data['message_type'] == "stickers":  # 表情包消息
                         self.scr1.configure(state=NORMAL)
-                        self.scr1.insert("end", "{} {}:\n".format(self.name, now_time), 'green')
-                        self.scr1.insert("end", f'你已拒绝接收{fileType}', 'shengzise')
-                        self.scr1.insert("end", f' |来源:{json_data["send_user"]}\n', 'zise')
+                        self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
+                        dics = self.obj_emoji.dics  # 获取表情包字典
+                        if json_data['content'] in dics:  # 如果表情包在字典中
+                            mes = json_data['content']
+                            self.scr1.image_create(END, image=dics[mes])
+                            self.scr1.insert("end", '\n', 'zise')
+                            self.scr1.see(END)
+                        self.scr1.config(state=DISABLED)
+                        print(f'收到{json_data["send_user"]}发的表情包：', json_data['content'])
+
+                # 处理私聊消息
+                elif json_data['chat_type'] == "private":
+                    if json_data['message_type'] == "text":  # 私聊文本消息
+                        self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
+                        self.scr1.insert("end", json_data['content'])
+                        self.scr1.insert("end", f'  |私聊消息\n', 'zise')
+                        print(f'[私聊]收到{json_data["send_user"]}的消息：', json_data['content'])
+
+                    elif json_data['message_type'] == "stickers":  # 私聊表情包消息
+                        self.scr1.configure(state=NORMAL)
+                        self.scr1.insert("end", "{} {}:\n".format(json_data['send_user'], now_time), 'green')
+                        dics = self.obj_emoji.dics
+                        if json_data['content'] in dics:
+                            mes = json_data['content']
+                            self.scr1.image_create(END, image=dics[mes])
+                            self.scr1.insert("end", f'  |私聊消息\n', 'zise')
+                            self.scr1.see(END)
+                        self.scr1.config(state=DISABLED)
+                        print(f'[私聊]收到{json_data["send_user"]}发的表情包：', json_data['content'])
+
+                    elif json_data['message_type'] == "ask-file":  # 私聊文件消息
+                        fileType = json_data["file_type"]
+                        self.scr1.configure(state=NORMAL)
+                        self.scr1.insert("end", "{} {}:\n".format(json_data["send_user"], now_time), 'green')
+                        self.scr1.insert("end", f'正在向你发送一个{fileType}文件...\n', 'shengzise')
                         self.scr1.see(END)
                         self.scr1.config(state=DISABLED)
 
-                elif json_data['message_type'] == "isRecv":  # 处理发送文件的数据
-                    if json_data['isRecv'] == "true":  # 对方同意接收文件
-                        if json_data["file_type"] == 'normal-file':
-                            f = open(json_data["content"], 'rb')  # r方式读到str格式数据，rb方式读到bytes型。若是rb格式，下面sendto就不需要encode
-                            data = f.read()  # 读取文件数据
-                            fhead = len(data)  # 计算文件大小
-                            print('文件大小:', fhead)
+                        # 判断是否接收文件
+                        flag = messagebox.askyesno(title='提示',
+                                                message=f'{json_data["send_user"]}向你发送了一个{fileType}\n你是否要接收和保存？')
+                        if flag:
+                            json_data['message_type'] = "isRecv"
+                            json_data['isRecv'] = "true"  # 同意接收文件
+                            jsondata = json.dumps(json_data, ensure_ascii=False)
+                            sock.sendall(jsondata.encode('utf-8'))
 
-                            # 构造文件数据头消息
-                            message = {}
-                            message["chat_type"] = "private"
-                            message["message_type"] = "file-data"
-                            message["file_length"] = str(fhead)  # 文件长度
-                            message["file_name"] = json_data["file_name"]
-                            message["send_user"] = json_data["send_user"]
-                            message["recv_user"] = json_data["recv_user"]
-                            message["content"] = ''  # 内容为空，用于标记文件数据开始
-                            jsondata = json.dumps(message, ensure_ascii=False)  # 序列化消息
-                            sock.sendto(jsondata.encode('utf-8'), server) # 发送到服务器
+                        else:  # 用户拒绝接收文件
+                            json_data['message_type'] = "isRecv"
+                            json_data['isRecv'] = "false"
+                            jsondata = json.dumps(json_data, ensure_ascii=False)
+                            sock.sendall(jsondata.encode('utf-8'))
+                            self.scr1.configure(state=NORMAL)
+                            self.scr1.insert("end", "{} {}:\n".format(self.name, now_time), 'green')
+                            self.scr1.insert("end", f'你已拒绝接收{fileType}', 'shengzise')
+                            self.scr1.insert("end", f' |来源:{json_data["send_user"]}\n', 'zise')
+                            self.scr1.see(END)
+                            self.scr1.config(state=DISABLED)
 
-                            print('开始发送文件数据...')
-                            self.cut_data(fhead, data)  # 调用分片函数cut_data发送文件数据
-                            print('文件数据已成功发送到服务器！')
-                            f.close() # 关闭文件句柄
-                            
-                    else:  # 对方拒绝接收文件
-                        self.scr1.insert("end", "{} {}:\n".format(json_data["send_user"], now_time), 'green')
-                        self.scr1.insert("end", f"对方拒绝接收你发的{json_data['file_name']}文件\n", 'chengse')
-                        self.scr1.see(END)
+                    elif json_data['message_type'] == "isRecv":  # 处理发送文件的数据
+                        if json_data['isRecv'] == "true":  # 对方同意接收文件
+                            if json_data["file_type"] == 'normal-file':
+                                f = open(json_data["content"], 'rb')  # r方式读到str格式数据，rb方式读到bytes型。
+                                data = f.read()  # 读取文件数据
+                                fhead = len(data)  # 计算文件大小
+                                print('文件大小:', fhead)
 
-                elif json_data['message_type'] == "file-data":  # 接收文件数据
-                    print('正在接收文件')
-                    filename = json_data['file_name']
-                    data_size = int(json_data['file_length'])
-                    print('文件大小为' + str(data_size))
-                    recvd_size = 0  # 初始化已接收数据大小
-                    data_total = b''  # 存储完整文件数据
-                    j = 0  # 计数变量
+                                # 构造文件数据头消息
+                                message = {}
+                                message["chat_type"] = "private"
+                                message["message_type"] = "file-data"
+                                message["file_length"] = str(fhead)  # 文件长度
+                                message["file_name"] = json_data["file_name"]
+                                message["send_user"] = json_data["send_user"]
+                                message["recv_user"] = json_data["recv_user"]
+                                message["content"] = ''  # 内容为空，用于标记文件数据开始
+                                jsondata = json.dumps(message, ensure_ascii=False)  # 序列化消息
+                                sock.sendall(jsondata.encode('utf-8')) # 发送到服务器
 
-                    # 循环接收文件数据
-                    while not recvd_size == data_size:
-                        j = j + 1
-                        if data_size - recvd_size > 1024:  # 如果剩余数据大于1024字节
-                            data, addr = sock.recvfrom(1024)  # 接收 1024 字节数据
-                            recvd_size += len(data)
-                            print('第' + str(j) + '次收到文件数据')
-                        else:  # 最后一片
-                            data, addr = sock.recvfrom(1024) 
-                            recvd_size = data_size  # 标记文件接收完成
-                            print('第' + str(j) + '次收到文件数据')
-                        data_total += data  # 将接收到的数据拼接
+                                print('开始发送文件数据...')
+                                self.cut_data(fhead, data)  # 调用分片函数cut_data发送文件数据
+                                print('文件数据已成功发送到服务器！')
+                                f.close() # 关闭文件句柄
+                                
+                        else:  # 对方拒绝接收文件
+                            self.scr1.insert("end", "{} {}:\n".format(json_data["send_user"], now_time), 'green')
+                            self.scr1.insert("end", f"对方拒绝接收你发的{json_data['file_name']}文件\n", 'chengse')
+                            self.scr1.see(END)
 
-                    # 将接收的文件数据写入到本地文件
-                    f = open(filename, 'wb')  # 收到的数据是bytes型，可以直接用wb写入，不用Decode。若用的是w方式，要对接收数据decode后写入
-                    f.write(data_total)
-                    f.close()
-                    print(filename, '文件接收完成！')
-
-                    self.succ_recv(filename, json_data["send_user"])  # 调用成功接收文件的处理函数
-
-                    # 通知服务器文件接收成功
-                    message = {}
-                    message["chat_type"] = "private"
-                    message["message_type"] = "Recv_msg"
-                    message["Recv_msg"] = "true"  # 接收成功标记 ACK
-                    message["file_length"] = json_data['file_length']
-                    message["file_name"] = json_data["file_name"]
-                    message["send_user"] = json_data["recv_user"]
-                    message["recv_user"] = json_data["send_user"]
-                    jsondata = json.dumps(message, ensure_ascii=False)
-                    sock.sendto(jsondata.encode('utf-8'), server)  # 发送接收成功消息到服务器
-
-                elif json_data['message_type'] == "Recv_msg":  # 文件发送者收到接收者确认消息
-                    if json_data['Recv_msg'] == "true":
-                        recv_user = json_data['recv_user']
+                    elif json_data['message_type'] == "file-data":  # 接收文件数据
+                        print('正在接收文件')
                         filename = json_data['file_name']
-                        self.succ_send(recv_user, filename)  # 调用文件发送成功处理函数
+                        data_size = int(json_data['file_length'])
+                        print('文件大小为' + str(data_size))
+                        recvd_size = 0  # 初始化已接收数据大小
+                        data_total = b''  # 存储完整文件数据
+                        j = 0  # 计数变量
+
+                        # 循环接收文件数据
+                        while not recvd_size == data_size:
+                            j = j + 1
+                            if data_size - recvd_size > 1024:  # 如果剩余数据大于1024字节
+                                data, addr = sock.recvfrom(1024)  # 接收 1024 字节数据
+                                recvd_size += len(data)
+                                print('第' + str(j) + '次收到文件数据')
+                            else:  # 最后一片
+                                data, addr = sock.recvfrom(1024) 
+                                recvd_size = data_size  # 标记文件接收完成
+                                print('第' + str(j) + '次收到文件数据')
+                            data_total += data  # 将接收到的数据拼接
+
+                        # 将接收的文件数据写入到本地文件
+                        f = open(filename, 'wb')  # 收到的数据是bytes型，可以直接用wb写入，不用Decode。若用的是w方式，要对接收数据decode后写入
+                        f.write(data_total)
+                        f.close()
+                        print(filename, '文件接收完成！')
+
+                        self.succ_recv(filename, json_data["send_user"])  # 调用成功接收文件的处理函数
+
+                        # 通知服务器文件接收成功
+                        message = {}
+                        message["chat_type"] = "private"
+                        message["message_type"] = "Recv_msg"
+                        message["Recv_msg"] = "true"  # 接收成功标记 ACK
+                        message["file_length"] = json_data['file_length']
+                        message["file_name"] = json_data["file_name"]
+                        message["send_user"] = json_data["recv_user"]
+                        message["recv_user"] = json_data["send_user"]
+                        jsondata = json.dumps(message, ensure_ascii=False)
+                        sock.sendall(jsondata.encode('utf-8'))  # 发送接收成功消息到服务器
+
+                    elif json_data['message_type'] == "Recv_msg":  # 文件发送者收到接收者确认消息
+                        if json_data['Recv_msg'] == "true":
+                            recv_user = json_data['recv_user']
+                            filename = json_data['file_name']
+                            self.succ_send(recv_user, filename)  # 调用文件发送成功处理函数
+            except Exception as e:
+                print(f"Error: {e}")
+                break
 
 
 class ChatUI():
@@ -423,13 +427,13 @@ class ChatUI():
 
     def JieShu(self):
         flag = messagebox.askokcancel(title='提示', message='你确定要退出聊天室吗？')
-        # s.sendto(f":{name} 已退出聊天室...".encode('utf-8'),server)
+        # sock.sendall(f":{self.name} 已退出聊天室...".encode('utf-8'),server)
         if flag:
             message = {}
             message["message_type"] = "leave_message"
             message["content"] = self.name
             jsondata = json.dumps(message, ensure_ascii=False)
-            sock.sendto(jsondata.encode('utf-8'), server)
+            sock.sendall(jsondata.encode('utf-8'))
             sys.exit(0)
 
     def openfile(self):
@@ -526,14 +530,14 @@ class ChatUI():
             message["chat_type"] = "private"
             message["recv_user"] = self.fri_list.selection()[0]
             jsondata = json.dumps(message, ensure_ascii=False)
-            sock.sendto(jsondata.encode('utf-8'), server)
+            sock.sendall(jsondata.encode('utf-8'))
             self.scr1.image_create(END, image=dics[stick_code])
             self.scr1.insert("end", f'  |私聊{self.fri_list.selection()[0]}\n', 'zise')
             print(f'表情消息:{stick_code}发送成功！[私聊{self.fri_list.selection()[0]}]')
         else:
             message["chat_type"] = "normal"
             jsondata = json.dumps(message, ensure_ascii=False)
-            sock.sendto(jsondata.encode('utf-8'), server)
+            sock.sendall(jsondata.encode('utf-8'))
             self.scr1.image_create(END, image=dics[stick_code])
             print(f'表情消息:{stick_code}发送成功！')
             self.scr1.insert(END, '\n')
