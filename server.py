@@ -8,11 +8,11 @@ def handle_client(conn, addr, users):
         while True:
             try:
                 data = conn.recv(1024)
-                print(f"data:{data}")
+                print(f"rev_data: {data}")
                 if not data:
                     break
                 json_data = json.loads(data.decode('utf-8'))
-                print(json_data)
+                print(f"json_data: {json_data}")
 
                 # 处理初始化消息（用户加入）
                 if json_data['message_type'] == "init_message":
@@ -51,11 +51,51 @@ def handle_client(conn, addr, users):
                 elif json_data['chat_type'] == "private":
                     recv_user = json_data['recv_user']
                     send_user = json_data['send_user']
+                    print(f"recv_user: {recv_user}")
+                    print(f"send_user: {send_user}")
+                    
                     if recv_user in users and json_data['message_type'] != "file-data":
                         users[recv_user].sendall(data)
                     else:
-                        # 文件传输逻辑应在此处实现
-                        pass
+                        # 文件传输逻辑
+                        filename = json_data['file_name']  # 获取文件名
+                        data_size = int(json_data.get('file_length', 0))  # 获取文件大小
+                        
+                        print(f'准备接收文件: {filename}, 大小: {data_size} bytes')
+                        
+                        recvd_size = 0  # 已接收的数据大小
+                        data_total = b''  # 存储所有接收到的文件数据
+                        
+                        # 循环接收文件数据，直到接收到完整的文件
+                        while recvd_size < data_size:
+                            chunk = conn.recv(min(1024, data_size - recvd_size))
+                            if not chunk:
+                                raise Exception("File transfer was interrupted.")
+                            data_total += chunk
+                            recvd_size += len(chunk)
+                            print(f'已接收: {recvd_size}/{data_size} bytes')
+
+                        # 构建文件传输消息
+                        message = {
+                            "chat_type": "private",  # 消息类型为私聊
+                            "message_type": "file-data",  # 消息类型为文件数据
+                            "file_length": str(len(data_total)),  # 文件大小
+                            "file_name": filename,  # 文件名
+                            "send_user": send_user,  # 发送者
+                            "recv_user": recv_user,  # 接收者
+                            "content": ''  # 内容为空，标记文件数据开始
+                        }
+                        jsondata = json.dumps(message, ensure_ascii=False)  # 序列化消息
+                        users[recv_user].sendall(jsondata.encode('utf-8'))  # 发送给接收者
+
+                        print('开始发送文件数据...')
+                        # 按1024字节分块发送文件数据
+                        for i in range(0, len(data_total), 1024):
+                            users[recv_user].sendall(data_total[i:i+1024])
+                            print(f'已发送: {i+1024}/{len(data_total)} bytes')
+
+                        now_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                        print(f'{now_time}: "{filename}" 文件发送完成! from {addr[0]}:{addr[1]} [目标:{recv_user}] at {now_time}')
 
             except ConnectionResetError:
                 logging.warning('Someone left unexpectedly.')

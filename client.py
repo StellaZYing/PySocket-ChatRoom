@@ -62,6 +62,7 @@ class ChatClient():
         - 支持文本、文件、表情等多种消息类型
         '''
         self.msg = self.scr2.get(1.0, 'end').strip()  # 从文本框的开头到末尾获取内容，并去掉前后空白
+        print(f"self.msg:{self.msg}")
         self.scr2.delete('1.0', 'end') # 清空输入框
         send_type, send_file = self.private_send(self.msg) # 调用 private_send 方法，判断消息的类型（文本或文件）
         if self.msg != '' and self.fri_list.selection() != (): # 如果消息内容非空且已选择私聊目标
@@ -87,8 +88,15 @@ class ChatClient():
         '''
         获取文件的路径、名称和扩展名
         '''
-        fpath, tempfilename = os.path.split(filename)
-        fname, extension = os.path.splitext(tempfilename)
+        if os.path.exists(self.msg):
+            # 如果存在，可以进一步处理
+            fpath, tempfilename = os.path.split(filename)
+            fname, extension = os.path.splitext(tempfilename)
+            print(f"Path: {fpath}")
+            print(f"File name without extension: {fname}")
+            print(f"Extension: {extension}")
+        else:
+            print("The provided path does not exist.")
         return fpath, fname, extension, tempfilename
 
     def send_file(self, fileType, fileName, filePath):
@@ -127,10 +135,10 @@ class ChatClient():
         for i in range(fhead // 1024 + 1): # 计算总共需要发送多少块数据 (每块大小为 1024 字节)
             time.sleep(0.0000000001)  # 防止数据发送太快，服务器来不及接收出错
             if 1024 * (i + 1) > fhead:  # 是否到最后
-                sock.sendall(data[1024 * i:], server)  # 最后一次剩下的数据传给对方
+                sock.sendall(data[1024 * i:])  # 最后一次剩下的数据传给对方
                 print('第' + str(i + 1) + '次发送文件数据')
             else:
-                sock.sendall(data[1024 * i:1024 * (i + 1)], server) # 发送完整的 1024 字节块数据
+                sock.sendall(data[1024 * i:1024 * (i + 1)]) # 发送完整的 1024 字节块数据
                 print('第' + str(i + 1) + '次发送文件数据')
 
     def succ_recv(self, filename, sourcename):
@@ -344,7 +352,7 @@ class ChatClient():
 
                     elif json_data['message_type'] == "isRecv":  # 处理发送文件的数据
                         if json_data['isRecv'] == "true":  # 对方同意接收文件
-                            if json_data["file_type"] == 'normal-file':
+                            if json_data["file_type"] in ('normal-file', 'image', 'video'):
                                 f = open(json_data["content"], 'rb')  # r方式读到str格式数据，rb方式读到bytes型。
                                 data = f.read()  # 读取文件数据
                                 fhead = len(data)  # 计算文件大小
